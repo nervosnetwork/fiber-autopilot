@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ckb_jsonrpc_types::Script;
 use fnn::{fiber::serde_utils::U128Hex, rpc::peer::MultiAddr};
 use serde::{Deserialize, Serialize};
@@ -5,9 +7,29 @@ use serde_with::serde_as;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
+    #[serde(flatten)]
+    pub source: SourceConfig,
+    pub agents: Vec<AgentConfig>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum SourceConfig {
+    Rpc(RpcSourceConfig),
+    Mock(MockSourceConfig),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RpcSourceConfig {
     pub fiber: FiberConfig,
     pub ckb: CkbConfig,
-    pub agents: Vec<AgentConfig>,
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+pub struct MockSourceConfig {
+    #[serde_as(as = "U128Hex")]
+    pub balance: u128,
+    pub graph_data: PathBuf,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,4 +116,7 @@ pub struct AgentConfig {
     pub max_chan_funds: u128,
     #[serde(default, flatten)]
     pub heuristics: HeuristicConfig,
+    /// Exit after reach maximum number of channels
+    #[serde(default)]
+    pub exit_after_max: bool,
 }

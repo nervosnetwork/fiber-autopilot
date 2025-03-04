@@ -6,8 +6,22 @@ Fiber Autopilot continuously analyzes peers in the network graph and recommends 
 ## Run
 
 ``` sh
-# Copy configure file
-copy $PROJECT/fiber-autopilot.toml .
 # Run
-RUST_LOG=info,fiber_autopilot=debug cargo run
+RUST_LOG=info,fiber_autopilot=info cargo run -c config/testnet.toml
+```
+
+## Mock test
+
+1. Generate mock data
+
+``` sh
+cd mock-data-generator
+uv run main.py ../tmp/graph.json
+cd -
+```
+
+2. Run mock test
+
+``` sh
+RUST_LOG=info cargo run -c config/mock-test.toml
 ```

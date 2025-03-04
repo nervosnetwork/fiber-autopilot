@@ -86,8 +86,7 @@ impl BetweennessCentrality {
 
     /// Normalize centrality to 0.0 ~ 1.0 if normalize is passed
     pub fn get(&self, normalize: bool) -> HashMap<PeerId, f64> {
-        assert!(self.max - self.min > 0.0);
-        let z = 1.0 / (self.max - self.min);
+        let z = 1.0 / (self.max - self.min).max(1.0);
 
         let mut centrality = HashMap::with_capacity(self.centrality.len());
 

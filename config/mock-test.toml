@@ -1,0 +1,35 @@
+# Mock data config
+# Comment this section to use real data
+[Mock]
+balance = "0xE8D4A51000"
+graph_data = "tmp/graph.json"
+
+# Autopilot agent config
+# Agent can be configured multiple times for different tokens
+[[agents]]
+# exit after max number of channels is opened
+# Recommended to disable in real production
+exit_after_max = true
+token.type = "Ckb"
+# external_nodes is a list of node address, external nodes always have high scores
+external_nodes = []
+# interval to open new channels, recommended to be 15 seconds
+interval = 0
+# max number of channels to open
+max_chan_num = 100
+# max number of pending channels
+max_pending = 20
+# 100 CKB
+min_chan_funds = "0x2540BE400"
+# 100 CKB
+max_chan_funds = "0x2540BE400"
+# heuristics to calculate scores
+[[agents.heuristics]]
+heuristic = "Centrality"
+weight = 0.8
+[[agents.heuristics]]
+heuristic = "Richness"
+weight = 0.1
+[[agents.heuristics]]
+heuristic = "Random"
+weight = 0.1

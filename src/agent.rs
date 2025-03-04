@@ -20,16 +20,8 @@ use crate::{
     config::{AgentConfig, TokenType},
     graph::Graph,
     traits::GraphSource,
-    utils::{choice_n, get_peer_id_from_addr},
+    utils::{choice_n, conv, get_peer_id_from_addr},
 };
-
-// TODO: Remove after upgrade ckb_json_type to the same version
-macro_rules! conv {
-    ( $x:expr ) => {{
-        let v = serde_json::to_value($x).expect("conv");
-        serde_json::from_value(v).expect("conv")
-    }};
-}
 
 #[derive(Debug, Clone)]
 struct OpenChannelCmd {
@@ -98,8 +90,50 @@ impl<GS: GraphSource + Send + Clone + Debug + 'static> Agent<GS> {
             if let Err(err) = self.run_once().await {
                 error!("Run once {err:?}");
             }
-            let interval = Duration::from_secs(self.config.interval);
-            tokio::time::sleep(interval).await;
+
+            if self.config.interval > 0 {
+                let interval = Duration::from_secs(self.config.interval);
+                tokio::time::sleep(interval).await;
+            }
+
+            // exit after reach maximum number of channels
+            if self.config.exit_after_max {
+                let local_channels = self
+                    .source
+                    .local_channels()
+                    .await
+                    .expect("get local channels");
+                if local_channels.len() >= self.config.max_chan_num {
+                    info!("Reach maximum number of channels, exit...");
+                    // output self node channels count
+                    info!("local channels count {}", local_channels.len());
+                    // output self node scores
+                    let nodes = self.source.graph_nodes().await.expect("get graph nodes");
+                    assert!(nodes.iter().any(|n| n.node_id == self.self_id));
+                    let channels = self
+                        .source
+                        .graph_channels()
+                        .await
+                        .expect("get graph channels");
+                    let graph = Arc::new(Graph::build(nodes, channels));
+                    let self_id = PeerId::from_public_key(&self.self_id.into());
+                    let scores = crate::heuristics::get_node_scores(
+                        &self.config.heuristics,
+                        graph.clone(),
+                        [self_id].into_iter().collect(),
+                    )
+                    .await
+                    .expect("get node scores");
+                    for (node, score) in scores {
+                        info!("Node {:?} score {}", node, score);
+                    }
+                    // output network nodes count
+                    info!("network nodes count {}", graph.nodes().len());
+                    // output network channels count
+                    info!("network channels count {}", graph.channels().len());
+                    break;
+                }
+            }
         }
     }
 
@@ -155,8 +189,19 @@ impl<GS: GraphSource + Send + Clone + Debug + 'static> Agent<GS> {
             .max_chan_num
             .saturating_sub(local_channels.len()))
         .min(20);
-        self.open_channels(available_funds, num, graph, local_channels)
-            .await
+        if num > 0 {
+            self.open_channels(available_funds, num, graph, local_channels)
+                .await
+        } else {
+            // output debug info
+            info!(
+                "Stop open channels, available_funds {} max_chan_num {} local_channels {}",
+                available_funds,
+                self.config.max_chan_num,
+                local_channels.len()
+            );
+            Ok(())
+        }
     }
 
     pub(crate) async fn open_channels(
@@ -174,7 +219,7 @@ impl<GS: GraphSource + Send + Clone + Debug + 'static> Agent<GS> {
         // check connected pending channels
         for c in local_channels.iter() {
             if self.pending.remove(&c.peer_id) {
-                info!(
+                debug!(
                     "Successfully open channel {:?} {:?} with {:?} funds {} {}",
                     c.channel_id,
                     c.channel_outpoint,
@@ -352,7 +397,7 @@ impl<GS: GraphSource + Send + Clone + Debug + 'static> Agent<GS> {
             } = cmd;
             match handle.await {
                 Ok(Ok(temp_channel_id)) => {
-                    info!("Initial open channel {temp_channel_id:?} with {peer:?} {addresses:?} funds {funds} {}",token.name());
+                    debug!("Initial open channel {temp_channel_id:?} with {peer:?} {addresses:?} funds {funds} {}",token.name());
                     // We must wait for peer to accept the channel
                 }
                 Ok(Err(err)) => {
@@ -383,9 +428,6 @@ impl<GS: GraphSource + Send + Clone + Debug + 'static> Agent<GS> {
             .ok_or_else(|| anyhow!("No address"))?;
 
         source.connect_peer(address).await.context("connect peer")?;
-
-        // wait
-        tokio::time::sleep(Duration::from_secs(3)).await;
 
         let funding_udt_type_script = match token {
             TokenType::Ckb => None,

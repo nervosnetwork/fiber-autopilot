@@ -10,12 +10,14 @@ mod utils;
 use anyhow::Result;
 use ckb_sdk::CkbRpcAsyncClient;
 use clap::Parser;
-use config::Config;
-use graph_source::rpc::RPCGraphSource;
+use config::{AgentConfig, Config, SourceConfig};
+use graph_source::{mock::MockGraphSource, rpc::RPCGraphSource};
 use rpc::client::RPCClient;
-use std::fs;
+use std::{fmt::Debug, fs};
 use tokio::task::JoinSet;
 use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
+use traits::GraphSource;
 
 /// This is a simple program to demonstrate clap derive usage
 #[derive(Parser, Debug)]
@@ -35,7 +37,17 @@ struct Args {
 }
 
 fn init_log() {
-    tracing_subscriber::fmt().init();
+    if let Ok(level) = std::env::var("RUST_LOG") {
+        tracing_subscriber::fmt()
+            .pretty()
+            .with_env_filter(EnvFilter::new(format!(
+                "{}={level}",
+                env!("CARGO_PKG_NAME").replace("-", "_"),
+            )))
+            .init();
+    } else {
+        tracing_subscriber::fmt().pretty().init();
+    }
 }
 
 #[tokio::main]
@@ -47,14 +59,27 @@ async fn main() -> Result<()> {
 
     let data = fs::read_to_string(&args.config)?;
     let config: Config = toml::from_str(&data)?;
-    let source = {
-        let fiber_client = RPCClient::new(&config.fiber.url);
-        let ckb_client = CkbRpcAsyncClient::new(&config.ckb.url);
-        RPCGraphSource::new(fiber_client, ckb_client)
-    };
+    match config.source {
+        SourceConfig::Rpc(rpc_config) => {
+            let fiber_client = RPCClient::new(&rpc_config.fiber.url);
+            let ckb_client = CkbRpcAsyncClient::new(&rpc_config.ckb.url);
+            let source = RPCGraphSource::new(fiber_client, ckb_client);
+            run_agents(config.agents, source).await?;
+        }
+        SourceConfig::Mock(mock_config) => {
+            let source = MockGraphSource::from_config(mock_config);
+            run_agents(config.agents, source).await?;
+        }
+    }
 
-    let handle: JoinSet<_> = config
-        .agents
+    Ok(())
+}
+
+async fn run_agents<GS>(agents: Vec<AgentConfig>, source: GS) -> Result<()>
+where
+    GS: GraphSource + Send + Clone + Debug + 'static,
+{
+    let handle: JoinSet<_> = agents
         .into_iter()
         .enumerate()
         .map(|(index, config)| {

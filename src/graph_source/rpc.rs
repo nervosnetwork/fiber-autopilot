@@ -1,4 +1,4 @@
-use std::{fmt::Debug, future::Future};
+use std::{fmt::Debug, future::Future, time::Duration};
 
 use anyhow::Result;
 use ckb_jsonrpc_types::Script;
@@ -42,7 +42,7 @@ impl RPCGraphSource {
 #[allow(clippy::manual_async_fn)]
 impl GraphSource for RPCGraphSource {
     fn node_info(&self) -> impl Future<Output = Result<NodeInfoResult>> {
-        async { self.fiber_client.node_info().await.map_err(Into::into) }
+        async { self.fiber_client.node_info().await }
     }
 
     fn graph_nodes(&self) -> impl Future<Output = Result<Vec<NodeInfo>>> {
@@ -55,7 +55,6 @@ impl GraphSource for RPCGraphSource {
                 })
                 .await
                 .map(|r| r.nodes)
-                .map_err(Into::into)
         }
     }
 
@@ -69,7 +68,6 @@ impl GraphSource for RPCGraphSource {
                 })
                 .await
                 .map(|r| r.channels)
-                .map_err(Into::into)
         }
     }
 
@@ -82,7 +80,6 @@ impl GraphSource for RPCGraphSource {
                 })
                 .await
                 .map(|r| r.channels)
-                .map_err(Into::into)
         }
     }
 
@@ -93,8 +90,11 @@ impl GraphSource for RPCGraphSource {
                     address: addr,
                     save: Some(true),
                 })
-                .await
-                .map_err(Into::into)
+                .await?;
+
+            // wait
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            Ok(())
         }
     }
 
@@ -104,7 +104,6 @@ impl GraphSource for RPCGraphSource {
                 .open_channel(params)
                 .await
                 .map(|r| r.temporary_channel_id)
-                .map_err(Into::into)
         }
     }
 
